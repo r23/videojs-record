@@ -66,9 +66,19 @@ class Record extends Plugin {
         // (re)set recorder state
         this.resetState();
 
+        // use custom time format for video.js player
+        if (options.formatTime && typeof options.formatTime === 'function') {
+            // user-supplied formatTime
+            this.setFormatTime(options.formatTime);
+        } else {
+            // plugin's default formatTime
+            this.setFormatTime((seconds, guide) => {
+                return formatTime(seconds, guide, this.displayMilliseconds);
+            });
+        }
+
         // add device button with icon based on type
         let deviceIcon = 'av-perm';
-
         switch (this.getRecordType()) {
             case IMAGE_ONLY:
             case VIDEO_ONLY:
@@ -119,16 +129,17 @@ class Record extends Plugin {
 
         // picture-in-picture
         let oldVideoJS = videojs.VERSION === undefined || compareVersion(videojs.VERSION, '7.6.0') === -1;
-        if (!('exitPictureInPicture' in document)) {
+        if (!('pictureInPictureEnabled' in document)) {
             // no support for picture-in-picture, disable pip
             this.pictureInPicture = false;
-        } else if (oldVideoJS) {
-            // add picture-in-picture toggle button for older video.js versions
-            // in browsers that support PIP
-            player.pipToggle = new PictureInPictureToggle(player, options);
-            player.pipToggle.hide();
         }
         if (this.pictureInPicture === true) {
+            if (oldVideoJS) {
+                // add picture-in-picture toggle button for older video.js versions
+                // in browsers that support PIP
+                player.pipToggle = new PictureInPictureToggle(player, options);
+                player.pipToggle.hide();
+            }
             // define Picture-in-Picture event handlers once
             this.onEnterPiPHandler = this.onEnterPiP.bind(this);
             this.onLeavePiPHandler = this.onLeavePiP.bind(this);
@@ -171,7 +182,7 @@ class Record extends Plugin {
         this.recordScreen = recordOptions.screen;
         this.maxLength = recordOptions.maxLength;
         this.maxFileSize = recordOptions.maxFileSize;
-        this.msDisplayMax = parseFloat(recordOptions.msDisplayMax);
+        this.displayMilliseconds = recordOptions.displayMilliseconds;
         this.debug = recordOptions.debug;
         this.pictureInPicture = recordOptions.pip;
         this.recordTimeSlice = recordOptions.timeSlice;
@@ -241,6 +252,10 @@ class Record extends Plugin {
                 this.player.pipToggle = this.player.controlBar.pictureInPictureToggle;
                 this.player.pipToggle.hide();
             }
+        } else if (
+            this.pictureInPicture === false &&
+            this.player.controlBar.pictureInPictureToggle !== undefined) {
+            this.player.controlBar.pictureInPictureToggle.hide();
         }
 
         // get rid of unused controls
@@ -259,6 +274,9 @@ class Record extends Plugin {
             case AUDIO_ONLY:
                 // reference to videojs-wavesurfer plugin
                 this.surfer = this.player.wavesurfer();
+
+                // use same time format as this plugin
+                this.surfer.setFormatTime(this._formatTime);
                 break;
 
             case IMAGE_ONLY:
@@ -268,7 +286,9 @@ class Record extends Plugin {
             case SCREEN_ONLY:
             case AUDIO_SCREEN:
                 // customize controls
-                this.player.bigPlayButton.hide();
+                if (this.player.bigPlayButton !== undefined) {
+                    this.player.bigPlayButton.hide();
+                }
 
                 // 'loadedmetadata' and 'loadstart' events reset the
                 // durationDisplay for the first time: prevent this
@@ -318,6 +338,7 @@ class Record extends Plugin {
         this.player.off(Event.DURATIONCHANGE);
         this.player.off(Event.LOADEDMETADATA);
         this.player.off(Event.LOADSTART);
+        this.player.off(Event.ENDED);
 
         // display max record time
         this.setDuration(this.maxLength);
@@ -464,7 +485,7 @@ class Record extends Plugin {
                         }
                     };
                 }
-                // open browser device selection dialog
+                // open browser device selection/permissions dialog
                 this.surfer.surfer.microphone.start();
                 break;
 
@@ -510,10 +531,12 @@ class Record extends Plugin {
                     navigator.mediaDevices.getUserMedia({
                         audio: this.recordAudio
                     }).then((mic) => {
-                        // Join microphone track with screencast stream (order matters)
+                        // join microphone track with screencast stream (order matters)
                         screenStream.addTrack(mic.getTracks()[0]);
                         this.onDeviceReady.bind(this)(screenStream);
-                    });
+                    }).catch(
+                        this.onDeviceError.bind(this)
+                    );
                 }).catch(
                     this.onDeviceError.bind(this)
                 );
@@ -803,6 +826,12 @@ class Record extends Plugin {
      */
     start() {
         if (!this.isProcessing()) {
+            // check if user didn't revoke permissions after a previous recording
+            if (this.stream && this.stream.active === false) {
+                // ask for permissions again
+                this.getDevice();
+                return;
+            }
             this._recording = true;
 
             // hide play/pause control
@@ -1198,13 +1227,14 @@ class Record extends Plugin {
             case ANIMATION:
             case SCREEN_ONLY:
                 if (this.player.controlBar.currentTimeDisplay &&
-                    this.player.controlBar.currentTimeDisplay.contentEl()) {
+                    this.player.controlBar.currentTimeDisplay.contentEl() &&
+                    this.player.controlBar.currentTimeDisplay.contentEl().lastChild) {
                     this.streamCurrentTime = Math.min(currentTime, duration);
 
                     // update current time display component
                     this.player.controlBar.currentTimeDisplay.formattedTime_ =
                         this.player.controlBar.currentTimeDisplay.contentEl().lastChild.textContent =
-                            formatTime(this.streamCurrentTime, duration, this.msDisplayMax);
+                            this._formatTime(this.streamCurrentTime, duration, this.displayMilliseconds);
                 }
                 break;
         }
@@ -1244,10 +1274,11 @@ class Record extends Plugin {
             case SCREEN_ONLY:
                 // update duration display component
                 if (this.player.controlBar.durationDisplay &&
-                    this.player.controlBar.durationDisplay.contentEl()) {
+                    this.player.controlBar.durationDisplay.contentEl() &&
+                    this.player.controlBar.durationDisplay.contentEl().lastChild) {
                     this.player.controlBar.durationDisplay.formattedTime_ =
                     this.player.controlBar.durationDisplay.contentEl().lastChild.textContent =
-                        formatTime(duration, duration, this.msDisplayMax);
+                        this._formatTime(duration, duration, this.displayMilliseconds);
                 }
                 break;
         }
@@ -1286,20 +1317,32 @@ class Record extends Plugin {
     }
 
     /**
-     * Show save as dialog in browser so the user can store the recorded media
-     * locally.
+     * Show save as dialog in browser so the user can store the recorded or
+     * converted media locally.
      *
-     * @param {object} name - Object with one or more names for the particular
-     *     blob(s) you want to save. File extensions are added automatically.
-     *     For example: {'video': 'name-of-video-file'}. Supported keys are
+     * @param {Object} name - Object with names for the particular blob(s)
+     *     you want to save. File extensions are added automatically. For
+     *     example: {'video': 'name-of-video-file'}. Supported keys are
      *     'audio', 'video' and 'gif'.
+     * @param {String} type - Type of media to save. Legal values are 'record'
+     *     (default) and 'convert'.
      * @example
-     * // save video file as 'foo.webm'
+     * // save recorded video file as 'foo.webm'
      * player.record().saveAs({'video': 'foo'});
+     *
+     * // save converted video file as 'bar.mp4'
+     * player.record().saveAs({'video': 'bar'}, 'convert');
+     * @returns {void}
      */
-    saveAs(name) {
-        if (this.engine && name !== undefined) {
-            this.engine.saveAs(name);
+    saveAs(name, type = 'record') {
+        if (type === 'record') {
+            if (this.engine && name !== undefined) {
+                this.engine.saveAs(name);
+            }
+        } else if (type === 'convert') {
+            if (this.converter && name !== undefined) {
+                this.converter.saveAs(name);
+            }
         }
     }
 
@@ -1448,6 +1491,34 @@ class Record extends Plugin {
     }
 
     /**
+     * Export image data of waveform (audio-only) or current video frame.
+     *
+     * The default format is `'image/png'`. Other supported types are
+     * `'image/jpeg'` and `'image/webp'`.
+     *
+     * @param {string} format='image/png' A string indicating the image format.
+     * The default format type is `'image/png'`.
+     * @param {number} quality=1 A number between 0 and 1 indicating the image
+     * quality to use for image formats that use lossy compression such as
+     * `'image/jpeg'`` and `'image/webp'`.
+     * @return {Promise} Returns a `Promise` resolving with an
+     * array of `Blob` instances.
+     */
+    exportImage(format = 'image/png', quality = 1) {
+        if (this.getRecordType() === AUDIO_ONLY) {
+            return this.surfer.surfer.exportImage(format, quality, 'blob');
+        } else {
+            // get a frame and copy it onto the canvas
+            let recordCanvas = this.player.recordCanvas.el().firstChild;
+            this.drawCanvas(recordCanvas, this.mediaElement);
+
+            return new Promise(resolve => {
+                recordCanvas.toBlob(resolve, format, quality);
+            });
+        }
+    }
+
+    /**
      * Mute LocalMediaStream audio and video tracks.
      *
      * @param {boolean} mute - Whether or not the mute the track(s).
@@ -1540,13 +1611,37 @@ class Record extends Plugin {
     captureFrame() {
         let detected = detectBrowser();
         let recordCanvas = this.player.recordCanvas.el().firstChild;
+        let track = this.stream.getVideoTracks()[0];
+        let settings = track.getSettings();
 
         // set the canvas size to the dimensions of the camera,
         // which also wipes the content of the canvas
-        recordCanvas.width = this.player.width();
-        recordCanvas.height = this.player.height();
+        recordCanvas.width = settings.width;
+        recordCanvas.height = settings.height;
 
         return new Promise((resolve, reject) => {
+            const cameraAspectRatio = settings.width / settings.height;
+            const playerAspectRatio = this.player.width() / this.player.height();
+            let imagePreviewHeight = 0;
+            let imagePreviewWidth = 0;
+            let imageXPosition = 0;
+            let imageYPosition = 0;
+
+            // determine orientation
+            // buddy ignore:start
+            if (cameraAspectRatio >= playerAspectRatio) {
+                // camera feed wider than player
+                imagePreviewHeight = settings.height * (this.player.width() / settings.width);
+                imagePreviewWidth = this.player.width();
+                imageYPosition = (this.player.height() / 2) - (imagePreviewHeight / 2);
+            } else {
+                // player wider than camera feed
+                imagePreviewHeight = this.player.height();
+                imagePreviewWidth = settings.width * (this.player.height() / settings.height);
+                imageXPosition = (this.player.width() / 2) - (imagePreviewWidth / 2);
+            }
+            // buddy ignore:end
+
             // MediaCapture is only supported on:
             // - Chrome 60 and newer (see
             // https://github.com/w3c/mediacapture-image/blob/gh-pages/implementation-status.md)
@@ -1557,12 +1652,12 @@ class Record extends Plugin {
             if ((detected.browser === 'chrome' && detected.version >= 60) &&
                (typeof ImageCapture === typeof Function)) {
                 try {
-                    let track = this.stream.getVideoTracks()[0];
                     let imageCapture = new ImageCapture(track);
                     // take picture
                     imageCapture.grabFrame().then((imageBitmap) => {
                         // get a frame and copy it onto the canvas
-                        this.drawCanvas(recordCanvas, imageBitmap);
+                        this.drawCanvas(recordCanvas, imageBitmap, imagePreviewWidth,
+                            imagePreviewHeight, imageXPosition, imageYPosition);
 
                         // notify others
                         resolve(recordCanvas);
@@ -1574,7 +1669,8 @@ class Record extends Plugin {
             // no ImageCapture available: do it the oldskool way
 
             // get a frame and copy it onto the canvas
-            this.drawCanvas(recordCanvas, this.mediaElement);
+            this.drawCanvas(recordCanvas, this.mediaElement, imagePreviewWidth,
+                imagePreviewHeight, imageXPosition, imageYPosition);
 
             // notify others
             resolve(recordCanvas);
@@ -1586,13 +1682,19 @@ class Record extends Plugin {
      * @private
      * @param {HTMLCanvasElement} canvas - Canvas to draw on.
      * @param {HTMLElement} element - Element to draw onto the canvas.
+     * @param {Number} width - Width of drawing on canvas.
+     * @param {Number} height - Height of drawing on canvas.
+     * @param {Number} x - X position on canvas where drawing starts.
+     * @param {Number} y - Y position on canvas where drawing starts.
      */
-    drawCanvas(canvas, element) {
-        canvas.getContext('2d').drawImage(
-            element, 0, 0,
-            canvas.width,
-            canvas.height
-        );
+    drawCanvas(canvas, element, width, height, x = 0, y = 0) {
+        if (width === undefined) {
+            width = canvas.width;
+        }
+        if (height === undefined) {
+            height = canvas.height;
+        }
+        canvas.getContext('2d').drawImage(element, x, y, width, height);
     }
 
     /**
@@ -1785,6 +1887,25 @@ class Record extends Plugin {
 
         // error if we get here: notify listeners
         this.player.trigger(Event.ERROR, errorMessage);
+    }
+
+    /**
+     * Replaces the default `formatTime` implementation with a custom implementation.
+     *
+     * @param {function} customImplementation - A function which will be used in place
+     *     of the default `formatTime` implementation. Will receive the current time
+     *     in seconds and the guide (in seconds) as arguments.
+     */
+    setFormatTime(customImplementation) {
+        this._formatTime = customImplementation;
+
+        videojs.setFormatTime(this._formatTime);
+
+        // audio-only
+        if (this.surfer) {
+            // use same time format as this plugin
+            this.surfer.setFormatTime(this._formatTime);
+        }
     }
 
     /**

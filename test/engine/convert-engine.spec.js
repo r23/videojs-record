@@ -2,9 +2,9 @@
  * @since 3.3.0
  */
 
-import TestHelpers from '../test-helpers.js';
+import TestHelpers from '../test-helpers';
 
-import {ConvertEngine, CONVERT_PLUGINS, TSEBML, FFMPEGJS} from '../../src/js/engine/convert-engine.js';
+import {ConvertEngine, CONVERT_PLUGINS, TSEBML, FFMPEGJS, FFMPEGWASM} from '../../src/js/engine/convert-engine';
 
 
 /** @test {convert-engine} */
@@ -32,7 +32,8 @@ describe('engine.convert-engine', () => {
     it('contain supported convert plugin engines', () => {
         expect(TSEBML).toEqual('ts-ebml');
         expect(FFMPEGJS).toEqual('ffmpeg.js');
-        expect(CONVERT_PLUGINS.length).toEqual(2);
+        expect(FFMPEGWASM).toEqual('ffmpeg.wasm');
+        expect(CONVERT_PLUGINS.length).toEqual(3);
     });
 
     it('loads blob', (done) => {

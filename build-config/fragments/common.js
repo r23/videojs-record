@@ -9,6 +9,12 @@ const rootDir = path.resolve(__dirname, '..', '..');
 const pckg = require(path.join(rootDir, 'package.json'));
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
+// enable logging of deprecation warnings stacktrace
+process.traceDeprecation = true;
+process.on('warning', (warning) => {
+    console.log(warning.stack);
+});
+
 // inject JS version number
 let jsVersionPlugin = new webpack.DefinePlugin({
     '__VERSION__': JSON.stringify(pckg.version)
@@ -25,6 +31,7 @@ let cssBannerPlugin = new webpack.BannerPlugin({
 });
 
 module.exports = {
+    devtool: false,
     context: rootDir,
     output: {
         libraryTarget: 'umd',
@@ -33,19 +40,40 @@ module.exports = {
     performance: {
         hints: false
     },
-    node: {
-        fs: 'empty'
+    stats: {
+        colors: true
+    },
+    resolve: {
+        // webpack < 5 used to include polyfills for node.js core modules by default.
+        // This is no longer the case; enable required polyfills here.
+        fallback: {
+            'buffer': require.resolve('buffer/')
+        }
     },
     // specify dependencies for the library that are not resolved by webpack,
     // but become dependencies of the output: they are imported from the
-    // environment during runtime.
-    externals: [
-        // mandatory
-        {'video.js': 'videojs'},
-        // optional
-        {'wavesurfer.js': 'WaveSurfer'},
-        {'recordrtc': 'RecordRTC'}
-    ],
+    // environment during runtime and never directly included in the
+    // videojs-record library
+    externals: {
+        'video.js': {
+            commonjs: 'video.js',
+            commonjs2: 'video.js',
+            amd: 'video.js',
+            root: 'videojs' // indicates global variable
+        },
+        'wavesurfer.js': {
+            commonjs: 'wavesurfer.js',
+            commonjs2: 'wavesurfer.js',
+            amd: 'wavesurfer.js',
+            root: 'WaveSurfer' // indicates global variable
+        },
+        'recordrtc': {
+            commonjs: 'recordrtc',
+            commonjs2: 'recordrtc',
+            amd: 'recordrtc',
+            root: 'RecordRTC' // indicates global variable
+        }
+    },
     module: {
         rules: [
             {

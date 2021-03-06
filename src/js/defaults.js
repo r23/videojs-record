@@ -20,13 +20,11 @@ const pluginDefaultOptions = {
     // Maximum file size of the recorded clip. Works only when the timeSlice
     // option is also enabled.
     maxFileSize: 0,
-    // msDisplayMax indicates the number of seconds that is
-    // considered the boundary value for displaying milliseconds
-    // in the time controls. An audio clip with a total length of
-    // 2 seconds and a msDisplayMax of 3 will use the format
-    // M:SS:MMM. Clips longer than msDisplayMax will be displayed
-    // as M:SS or HH:MM:SS.
-    msDisplayMax: 3,
+    // Boolean indicating if milliseconds should be included,
+    // e.g. "00:00:000" vs "00:00".
+    displayMilliseconds: false,
+    // Use a custom time format function, for example: (seconds, guide) => `test:${seconds}:${guide}`
+    formatTime: undefined,
     // Width of the recorded video frames.
     frameWidth: 320,
     // Height of the recorded video frames.
@@ -45,7 +43,7 @@ const pluginDefaultOptions = {
     videoEngine: 'recordrtc',
     // The video frame rate in frames per second (only used in webm-wasm plugin).
     videoFrameRate: 30,
-    // The mime type for the video recorder. Default to 'video/webm'.
+    // The mime type for the video recorder.
     // Use 'video/mp4' (Firefox) or 'video/webm;codecs=H264' (Chrome 52 and
     // newer) for MP4.
     videoMimeType: 'video/webm',
@@ -59,7 +57,8 @@ const pluginDefaultOptions = {
     // disable (default).
     videoWebAssemblyURL: '',
     // Audio recording library to use. Legal values are 'recordrtc' (default),
-    // 'libvorbis.js', 'opus-recorder', 'lamejs', 'vmsg' and 'recorder.js'.
+    // 'libvorbis.js', 'opus-recorder', 'opus-media-recorder', 'lamejs', 'vmsg'
+    // and 'recorder.js'.
     audioEngine: 'recordrtc',
     // Audio recorder type to use. This allows you to specify an alternative
     // recorder class, e.g. StereoAudioRecorder. Defaults to 'auto' which let's
@@ -124,8 +123,8 @@ const pluginDefaultOptions = {
     imageOutputQuality: 0.92,
     // Accepts numbers in milliseconds; use this to force intervals-based blobs.
     timeSlice: 0,
-    // Media converter library to use. Legal values are 'ts-ebml' and 'ffmpeg.js'.
-    // Use an empty string '' to disable (default).
+    // Media converter library to use. Legal values are 'ts-ebml', 'ffmpeg.wasm'
+    // and 'ffmpeg.js'. Use an empty string '' to disable (default).
     convertEngine: '',
     // URL for the converter worker.
     convertWorkerURL: '',
@@ -134,7 +133,7 @@ const pluginDefaultOptions = {
     // Enable keyboard hotkeys.
     hotKeys: false,
     // Use this object to specify additional settings for the library used by the
-    // plugin (only used in opus-recorder and vmsg plugins).
+    // plugin (only used in opus-recorder, ffmpeg.js, ffmpeg.wasm and vmsg plugins).
     pluginLibraryOptions: {}
 };
 

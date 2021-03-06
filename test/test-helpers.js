@@ -8,21 +8,33 @@ import {Player, mergeOptions} from 'video.js';
 
 import adapter from 'webrtc-adapter';
 
-import {LIBVORBISJS, RECORDERJS, LAMEJS, OPUSRECORDER, VMSG, WEBMWASM} from '../src/js/engine/record-engine.js';
-import {TSEBML, FFMPEGJS} from '../src/js/engine/convert-engine.js';
+import {LIBVORBISJS, RECORDERJS, LAMEJS, OPUSRECORDER, VMSG, WEBMWASM, OPUSMEDIARECORDER} from '../src/js/engine/record-engine';
+import {TSEBML, FFMPEGJS, FFMPEGWASM} from '../src/js/engine/convert-engine';
 
 const TestHelpers = {
     TEST_OGG: '/base/test/support/audio.ogg',
     TEST_WEBM: '/base/test/support/no_metadata.webm',
 
     DEFAULT_WAVESURFER_OPTIONS: {
-        src: 'live',
+        backend: 'WebAudio',
         waveColor: '#36393b',
         progressColor: 'black',
         debug: true,
         cursorWidth: 1,
-        msDisplayMax: 20,
-        hideScrollbar: true
+        displayMilliseconds: false,
+        hideScrollbar: true,
+        plugins: [
+            // enable microphone plugin
+            WaveSurfer.microphone.create({
+                bufferSize: 4096,
+                numberOfInputChannels: 1,
+                numberOfOutputChannels: 1,
+                constraints: {
+                    video: false,
+                    audio: true
+                }
+            })
+        ]
     },
 
     applyScreenWorkaround() {
@@ -72,6 +84,7 @@ const TestHelpers = {
             loop: false,
             width: 600,
             height: 300,
+            bigPlayButton: false,
             plugins: {
                 wavesurfer: this.DEFAULT_WAVESURFER_OPTIONS,
                 record: {
@@ -96,6 +109,7 @@ const TestHelpers = {
             loop: false,
             width: 500,
             height: 400,
+            bigPlayButton: false,
             plugins: {
                 wavesurfer: this.DEFAULT_WAVESURFER_OPTIONS,
                 record: {
@@ -137,7 +151,16 @@ const TestHelpers = {
                 recordPluginOptions.audioEngine = OPUSRECORDER;
                 recordPluginOptions.audioSampleRate = 48000;
                 recordPluginOptions.audioWorkerURL = '/base/node_modules/opus-recorder/dist/encoderWorker.min.js';
-                recordPluginOptions.audioChannels = 2;
+                recordPluginOptions.audioChannels = 1;
+                break;
+
+            case OPUSMEDIARECORDER:
+                recordPluginOptions.audioEngine = OPUSMEDIARECORDER;
+                recordPluginOptions.audioWorkerURL = '/base/node_modules/opus-media-recorder/encoderWorker.umd.js';
+                recordPluginOptions.audioWebAssemblyURL = {
+                    OggOpusEncoderWasmPath: '/base/node_modules/opus-media-recorder/OggOpusEncoder.wasm',
+                    WebMOpusEncoderWasmPath: '/base/node_modules/opus-media-recorder/WebMOpusEncoder.wasm'
+                };
                 break;
 
             case RECORDERJS:
@@ -160,6 +183,7 @@ const TestHelpers = {
             loop: false,
             width: 600,
             height: 350,
+            bigPlayButton: false,
             plugins: {
                 wavesurfer: this.DEFAULT_WAVESURFER_OPTIONS,
                 record: recordPluginOptions
@@ -190,6 +214,7 @@ const TestHelpers = {
             loop: false,
             width: 320,
             height: 240,
+            bigPlayButton: false,
             plugins: {
                 record: recordPluginOptions
             }
@@ -214,7 +239,14 @@ const TestHelpers = {
                 recordPluginOptions.convertEngine = FFMPEGJS;
                 recordPluginOptions.convertWorkerURL = '/base/node_modules/ffmpeg.js/ffmpeg-worker-mp4.js';
                 recordPluginOptions.convertOptions = ['-f', 'mp3', '-codec:a', 'libmp3lame', '-qscale:a', '2'];
-                recordPluginOptions.pluginLibraryOptions = {outputType: 'audio/mp3'};
+                recordPluginOptions.pluginLibraryOptions = {outputType: 'audio/mpeg'};
+                break;
+
+            case FFMPEGWASM:
+                recordPluginOptions.convertEngine = FFMPEGWASM;
+                recordPluginOptions.convertWorkerURL = '/base/node_modules/@ffmpeg/core/dist/ffmpeg-core.js';
+                recordPluginOptions.convertOptions = ['-c:v', 'libx264', '-preset', 'slow', '-crf', '22', '-c:a', 'copy', '-f', 'mp4'];
+                recordPluginOptions.pluginLibraryOptions = {outputType: 'video/mp4'};
                 break;
 
             default:
@@ -228,6 +260,7 @@ const TestHelpers = {
             loop: false,
             width: 320,
             height: 240,
+            bigPlayButton: false,
             plugins: {
                 record: recordPluginOptions
             }
@@ -242,6 +275,7 @@ const TestHelpers = {
             loop: false,
             width: 500,
             height: 400,
+            bigPlayButton: false,
             plugins: {
                 record: {
                     audio: true,
@@ -264,6 +298,7 @@ const TestHelpers = {
             loop: false,
             width: 500,
             height: 400,
+            bigPlayButton: false,
             plugins: {
                 record: {
                     audio: false,
@@ -287,6 +322,7 @@ const TestHelpers = {
             loop: false,
             width: 500,
             height: 400,
+            bigPlayButton: false,
             controlBar: {
                 volumePanel: false,
                 fullscreenToggle: false

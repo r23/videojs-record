@@ -8,7 +8,7 @@ process.env.BABEL_ENV = 'test';
 const path = require('path');
 require('@babel/register');
 
-let ci = process.env.TRAVIS || process.env.APPVEYOR;
+let ci = process.env.CI || process.env.APPVEYOR;
 let webpackConfig = require('./build-config/webpack.prod.main.js');
 let support_dir = path.resolve(__dirname, 'test', 'support');
 let fakeAudioStream = path.join(support_dir, 'Front_Center.wav');
@@ -20,6 +20,7 @@ let fakeVideoStream = path.join(support_dir, 'bus_qcif_7.5fps.y4m');
 // http://peter.sh/experiments/chromium-command-line-switches/
 const chromeFlags = [
     '--no-sandbox',
+    '--disable-gpu',
     '--no-first-run',
     '--noerrdialogs',
     '--no-default-browser-check',
@@ -28,13 +29,14 @@ const chromeFlags = [
     '--use-file-for-fake-audio-capture=' + fakeAudioStream,
     '--use-file-for-fake-video-capture=' + fakeVideoStream,
     '--autoplay-policy=no-user-gesture-required',
-    '--user-data-dir=.chrome',
+    '--user-data-dir=' + path.resolve('.chrome'),
     '--disable-translate',
     '--disable-extensions',
     '--disable-infobars',
     '--ignore-certificate-errors',
     '--allow-insecure-localhost',
-    '--enable-experimental-web-platform-features'
+    '--enable-experimental-web-platform-features',
+    '--js-flags=--max-old-space-size=8196'
 ];
 //-------------------------------------------
 // Firefox CLI options
@@ -51,7 +53,8 @@ const firefoxFlags = {
     'devtools.toolbox.host': 'right',
     'devtools.toolbox.selectedTool': 'webconsole',
     'devtools.chrome.enabled': true,
-    // disable autoplay blocking, see https://www.ghacks.net/2018/09/21/firefox-improved-autoplay-blocking/
+    // disable autoplay blocking, see:
+    // https://www.ghacks.net/2018/09/21/firefox-improved-autoplay-blocking/
     'media.autoplay.default': 1,
     'media.autoplay.ask-permission': false,
     'media.autoplay.enabled.user-gestures-needed': false,
@@ -67,7 +70,7 @@ const firefoxFlags = {
 module.exports = function(config) {
     let configuration = {
         basePath: '',
-        frameworks: ['jasmine', 'jasmine-matchers', 'host-environment', 'detectBrowsers'],
+        frameworks: ['jasmine', 'jasmine-matchers', 'host-environment', 'detectBrowsers', 'webpack'],
         hostname: 'localhost',
         port: 9876,
         logLevel: config.LOG_INFO,
@@ -96,7 +99,7 @@ module.exports = function(config) {
             // third-party dependencies for audio-only
             // -------------------------------------------
             // wavesurfer.js
-            'node_modules/wavesurfer.js/dist/wavesurfer.js',
+            'node_modules/wavesurfer.js/dist/wavesurfer.min.js',
             'node_modules/wavesurfer.js/dist/plugin/wavesurfer.microphone.js',
             // videojs-wavesurfer
             'node_modules/videojs-wavesurfer/dist/videojs.wavesurfer.js',
@@ -120,6 +123,9 @@ module.exports = function(config) {
             {pattern: 'node_modules/opus-recorder/dist/*Worker.min.js', included: false, served: true},
             {pattern: 'node_modules/opus-recorder/dist/*.wasm', included: false, served: true, type: 'wasm'},
             'node_modules/opus-recorder/dist/recorder.min.js',
+            // opus-media-recorder
+            {pattern: 'node_modules/opus-media-recorder/encoderWorker.umd.js', included: false, served: true},
+            {pattern: 'node_modules/opus-media-recorder/*.wasm', included: false, served: true, type: 'wasm'},
             // vmsg
             {pattern: 'node_modules/vmsg/*.wasm', included: false, served: true, type: 'wasm'},
             // web streams API polyfill to support Firefox (for webm-wasm)
@@ -129,8 +135,11 @@ module.exports = function(config) {
             {pattern: 'node_modules/webm-wasm/dist/webm-wasm.wasm', included: false, served: true, type: 'wasm'},
             // ffmpeg.js
             {pattern: 'node_modules/ffmpeg.js/ffmpeg-worker-mp4.js', included: false, served: true},
+            // ffmpeg.wasm
+            {pattern: 'node_modules/@ffmpeg/ffmpeg/dist/ffmpeg.min.js', included: false, served: true},
+            {pattern: 'node_modules/@ffmpeg/core/dist/ffmpeg-core.js', included: false, served: true},
             // gif-recorder: only available on CDN
-            'http://cdn.webrtc-experiment.com/gif-recorder.js',
+            'https://cdn.webrtc-experiment.com/gif-recorder.js',
 
             // -------------------------------------------
             // specs
@@ -165,7 +174,6 @@ module.exports = function(config) {
             'karma-firefox-launcher',
             'karma-edge-launcher',
             'karma-coverage',
-            'karma-coveralls',
             'karma-verbose-reporter',
             'karma-host-environment',
             'karma-detect-browsers'
@@ -179,9 +187,13 @@ module.exports = function(config) {
                 if (availableBrowsers.length > 1) {
                     // use custom browser launchers
                     let result = availableBrowsers;
+                    let cr = availableBrowsers.indexOf('Chrome');
+                    if (cr > -1) {
+                        availableBrowsers[cd] = 'Chrome_dev';
+                    }
                     let cd = availableBrowsers.indexOf('ChromeHeadless');
                     if (cd > -1) {
-                        availableBrowsers[cd] = 'Chrome_dev';
+                        availableBrowsers[cd] = 'Chrome_headless';
                     }
                     let fd = availableBrowsers.indexOf('FirefoxHeadless');
                     if (fd > -1) {
@@ -219,13 +231,19 @@ module.exports = function(config) {
             }
         },
         captureConsole: true,
-        browserNoActivityTimeout: 50000,
+        concurrency: 1,
+        browserSocketTimeout: 20000,
+        browserDisconnectTimeout : 10000,
+        browserDisconnectTolerance : 1,
+        browserNoActivityTimeout : 60000,
         colors: true,
         reporters: ['verbose', 'progress', 'coverage'],
         coverageReporter: {
-            type: 'html',
-            // specify a common output directory
-            dir: 'coverage'
+            dir: 'coverage',
+            reporters: [
+                { type: 'html', subdir: 'html' },
+                { type: 'lcov', subdir: 'lcov' }
+            ]
         },
         webpack: webpackConfig,
         customLaunchers: {
@@ -233,6 +251,10 @@ module.exports = function(config) {
                 base: 'Chrome',
                 flags: chromeFlags,
                 chromeDataDir: path.resolve(__dirname, '.chrome')
+            },
+            Chrome_headless: {
+                base: 'ChromeHeadless',
+                flags: chromeFlags
             },
             Chromium_dev: {
                 base: 'ChromiumHeadless',
@@ -250,16 +272,9 @@ module.exports = function(config) {
     };
 
     if (ci) {
-        configuration.browsers = ['Chrome_dev', 'Firefox_headless'];
+        configuration.browsers = ['Firefox_headless', 'Chrome_headless'];
         configuration.singleRun = true;
         configuration.detectBrowsers.enabled = false;
-
-        if (process.env.TRAVIS) {
-            // enable coveralls
-            configuration.reporters.push('coveralls');
-            // lcov or lcovonly are required for generating lcov.info files
-            configuration.coverageReporter.type = 'lcov';
-        }
     }
 
     config.set(configuration);

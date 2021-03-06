@@ -2,13 +2,13 @@
  * @since 2.2.0
  */
 
-import TestHelpers from './test-helpers.js';
+import TestHelpers from './test-helpers';
 
-import Event from '../src/js/event.js';
-import {isFirefox, detectBrowser} from '../src/js/utils/detect-browser.js';
+import Event from '../src/js/event';
+import {isFirefox, detectBrowser} from '../src/js/utils/detect-browser';
 
 // registers the plugin
-import Record from '../src/js/videojs.record.js';
+import Record from '../src/js/videojs.record';
 
 jasmine.DEFAULT_TIMEOUT_INTERVAL = 30000;
 
@@ -90,19 +90,16 @@ describe('Record', () => {
     it('runs as image-only plugin', (done) => {
         // create image-only plugin
         player = TestHelpers.makeImageOnlyPlayer();
-        // XXX: workaround weird error during test
-        // TypeError: Cannot read property 'videoWidth' of null tech error
-        player.recordCanvas.el().firstChild.videoWidth = 320;
-        player.recordCanvas.el().firstChild.videoHeight = 240;
 
         player.one(Event.FINISH_RECORD, () => {
             // received a base-64 encoded PNG string
-            expect(player.recordedData.startsWith(
-                'data:image/png;base64,i')).toBeTrue();
+            expect(
+                player.recordedData.startsWith('data:image/png;base64,i')
+            ).withContext(
+                'expected recordedData to be a base-64 encoded PNG string'
+            ).toBeTrue();
 
-            setTimeout(() => {
-                done();
-            }, 2000);
+            setTimeout(done, 2000);
         });
 
         player.one(Event.DEVICE_READY, () => {
@@ -126,20 +123,21 @@ describe('Record', () => {
         let opts = {
             plugins: {
                 record: {
-                    imageOutputType: 'blob',
+                    imageOutputType: 'blob'
                 }
             }
         };
 
         player = TestHelpers.makeImageOnlyPlayer(opts);
 
-        player.recordCanvas.el().firstChild.videoWidth = 320;
-        player.recordCanvas.el().firstChild.videoHeight = 240;
-
         expect(player.record().imageOutputType).toEqual('blob');
 
         player.one(Event.FINISH_RECORD, () => {
-            expect(player.recordedData instanceof Blob).toBeTruthy();
+            expect(
+                player.recordedData instanceof Blob
+            ).withContext(
+                'expected recordedData to be a Blob instance'
+            ).toBeTruthy();
 
             setTimeout(done, 2000);
         });
@@ -364,6 +362,48 @@ describe('Record', () => {
             expect(player.record().getDuration()).toEqual(0);
             expect(player.record().getCurrentTime()).toEqual(0);
             done();
+        });
+    });
+
+    /** @test {Record#exportImage} */
+    it('exports image (video)', (done) => {
+        // create new player
+        player = TestHelpers.makeVideoOnlyPlayer();
+
+        player.one(Event.DEVICE_READY, () => {
+            // default to png
+            player.record().exportImage().then((blob) => {
+                expect(blob instanceof Blob).toBeTruthy();
+                expect(blob.type).toEqual('image/png');
+
+                done();
+            });
+        });
+
+        player.one(Event.READY, () => {
+            player.record().getDevice();
+        });
+    });
+
+    /** @test {Record#exportImage} */
+    it('exports image (audio)', (done) => {
+        // create new player
+        player = TestHelpers.makeAudioOnlyPlayer();
+
+        player.one(Event.DEVICE_READY, () => {
+            // default to png
+            player.record().exportImage().then((arrayOfBlob) => {
+                // received a blob
+                expect(arrayOfBlob instanceof Array).toBeTruthy();
+                expect(arrayOfBlob[0] instanceof Blob).toBeTruthy();
+                expect(arrayOfBlob[0].type).toEqual('image/png');
+
+                done();
+            });
+        });
+
+        player.one(Event.READY, () => {
+            player.record().getDevice();
         });
     });
 
@@ -734,4 +774,56 @@ describe('Record', () => {
             done();
         });
     });
+
+    /** @test {Record} */
+    it('accepts formatTime option', (done) => {
+        let formatFunc = (seconds, guide) => `foo:${seconds}:${guide}`;
+        // create new player
+        player = TestHelpers.makeAudioOnlyPlayer({
+            plugins: {
+                record: {
+                    maxLength: 7,
+                    formatTime: formatFunc
+                }
+            }
+        });
+
+        player.one(Event.DEVICE_READY, () => {
+            expect(player.controlBar.currentTimeDisplay.formattedTime_).toEqual('foo:0:0');
+            expect(player.controlBar.durationDisplay.formattedTime_.substring(0, 5)).toEqual('foo:7');
+            done();
+        });
+
+        player.one(Event.READY, () => {
+            // start device
+            player.record().getDevice();
+        });
+    });
+
+    /** @test {Record#setFormatTime} */
+    it('setFormatTime replaces the default formatTime implementation', (done) => {
+        // create new player
+        player = TestHelpers.makeAudioOnlyPlayer({
+            plugins: {
+                record: {
+                    maxLength: 9
+                }
+            }
+        });
+
+        player.one(Event.DEVICE_READY, () => {
+            // change implementation
+            let formatFunc = (seconds, guide) => `bar:${seconds}:${guide}`;
+            player.record().setFormatTime(formatFunc);
+
+            expect(player.record()._formatTime).toEqual(formatFunc);
+            done();
+        });
+
+        player.one(Event.READY, () => {
+            // start device
+            player.record().getDevice();
+        });
+    });
+
 });
