@@ -202,6 +202,7 @@ class Record extends Plugin {
 
         // convert settings
         this.convertEngine = recordOptions.convertEngine;
+        this.convertAuto = recordOptions.convertAuto;
         this.convertWorkerURL = recordOptions.convertWorkerURL;
         this.convertOptions = recordOptions.convertOptions;
 
@@ -534,9 +535,14 @@ class Record extends Plugin {
                         // join microphone track with screencast stream (order matters)
                         screenStream.addTrack(mic.getTracks()[0]);
                         this.onDeviceReady.bind(this)(screenStream);
-                    }).catch(
-                        this.onDeviceError.bind(this)
-                    );
+                    }).catch((code) => {
+                        // here the screen sharing is in progress as successful result of navigator.mediaDevices.getDisplayMedia and
+                        // needs to be stopped because microphone permissions are not acquired by navigator.mediaDevices.getUserMedia
+                        if (screenStream.active) {
+                            screenStream.stop();
+                        }
+                        this.onDeviceError(code);
+                    });
                 }).catch(
                     this.onDeviceError.bind(this)
                 );
@@ -611,6 +617,11 @@ class Record extends Plugin {
      */
     onDeviceReady(stream) {
         this._deviceActive = true;
+
+        // stop previous stream if it is active
+        if (this.stream !== undefined && this.stream.active) {
+            this.stream.stop();
+        }
 
         // store reference to stream for stopping etc.
         this.stream = stream;
@@ -726,6 +737,7 @@ class Record extends Plugin {
                 }
 
                 // convert settings
+                this.converter.convertAuto = this.convertAuto;
                 this.converter.convertWorkerURL = this.convertWorkerURL;
                 this.converter.convertOptions = this.convertOptions;
                 this.converter.pluginLibraryOptions = this.pluginLibraryOptions;
@@ -1053,9 +1065,9 @@ class Record extends Plugin {
             this.player.controlBar.playToggle.show();
         }
 
-        // notify converter
-        if (this.converter !== undefined) {
-            this.converter.convert(this.player.recordedData);
+        // start converter
+        if (this.convertAuto === true) {
+            this.convert();
         }
 
         // notify listeners that data is available
@@ -1484,7 +1496,10 @@ class Record extends Plugin {
      * @private
      */
     removeRecording() {
-        if (this.mediaElement && this.mediaElement.src.startsWith('blob:') === true) {
+        if (this.mediaElement &&
+            this.mediaElement.src &&
+            this.mediaElement.src.startsWith('blob:') === true
+        ) {
             URL.revokeObjectURL(this.mediaElement.src);
             this.mediaElement.src = '';
         }
@@ -1547,6 +1562,15 @@ class Record extends Plugin {
     getRecordType() {
         return getRecorderMode(this.recordImage, this.recordAudio,
             this.recordVideo, this.recordAnimation, this.recordScreen);
+    }
+
+    /**
+     * Start converter.
+     */
+    convert() {
+        if (this.converter !== undefined) {
+            this.converter.convert(this.player.recordedData);
+        }
     }
 
     /**

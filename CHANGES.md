@@ -1,11 +1,31 @@
 # videojs-record changelog
 
-## 4.3.0 - unreleased
+## 4.5.0 - 2021/06/14
+
+- Add `convert` method and `convertAuto` option, allowing user
+  to control start of converter process (#568)
+- Improve check in `removeRecording` (#575)
+- Bump required version for webrtc-adapter (8.0.0 or newer)
+- Stop screen sharing on a microphone permissions error in
+  `AUDIO_SCREEN` mode (#585)
+
+
+## 4.4.0 - 2021/04/05
+
+- Fix stopping stream if it is active when using `getDevice` (#561)
+- Bump required version for:
+  - recordrtc (5.6.2 or newer) (#553)
+  - videojs-wavesurfer (3.7.0 or newer)
+  - webrtc-adapter (7.7.1 or newer)
+
+
+## 4.3.0 - 2021/03/08
 
 - Fix controlbar flickering in Mobile Safari (#413)
 - Fix hiding picture-in-picture button (#486)
 - Fix stretched output for image-only mode when aspect ratio
   of player is not the same as camera media constraints (#511)
+- Bump required version for videojs-wavesurfer (3.6.0 or newer)
 
 
 ## 4.2.0 - 2021/02/05
